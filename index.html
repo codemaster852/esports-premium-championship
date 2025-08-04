@@ -118,7 +118,8 @@
             arrayUnion,
             query,
             where,
-            orderBy
+            orderBy,
+            documentId
         } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
         // Your web app's Firebase configuration from your project
@@ -165,44 +166,50 @@
         async function render() {
             const path = window.location.hash.replace('#', '') || 'home';
             state.currentPage = path;
-            appContainer.innerHTML = ''; // Clear previous content
+            
+            // For dashboard, we fetch data first to prevent layout shifts and loops
+            if (path === 'dashboard') {
+                if (!state.user) {
+                    navigate('signin');
+                    return;
+                }
+                appContainer.innerHTML = Header() + '<p class="text-center text-white py-20">Loading Dashboard...</p>';
+                await fetchTournaments();
+                appContainer.innerHTML = Header() + await DashboardPage();
+                updateDashboardView();
+            } else {
+                 appContainer.innerHTML = ''; // Clear previous content
+                if (path !== 'admin') {
+                    appContainer.innerHTML += Header();
+                }
 
-            if (path !== 'admin') {
-                 appContainer.innerHTML += Header();
-            }
+                switch (path) {
+                    case 'home':
+                        appContainer.innerHTML += await HomePage();
+                        break;
+                    case 'signup':
+                        appContainer.innerHTML += SignUpPage();
+                        break;
+                    case 'signin':
+                        appContainer.innerHTML += SignInPage();
+                        break;
+                    case 'admin':
+                        if (!isAdmin()) {
+                            showAdminLogin();
+                            navigate('home');
+                            return;
+                        }
+                        appContainer.innerHTML += await AdminPage();
+                        break;
+                    default:
+                        appContainer.innerHTML += `<div class="text-center py-20"><h2 class="text-2xl">404 - Page Not Found</h2></div>`;
+                }
 
-            switch (path) {
-                case 'home':
-                    appContainer.innerHTML += await HomePage();
-                    break;
-                case 'signup':
-                    appContainer.innerHTML += SignUpPage();
-                    break;
-                case 'signin':
-                    appContainer.innerHTML += SignInPage();
-                    break;
-                case 'dashboard':
-                    if (!state.user) {
-                        navigate('signin');
-                        return;
-                    }
-                    appContainer.innerHTML += await DashboardPage();
-                    break;
-                case 'admin':
-                     if (!isAdmin()) {
-                        showAdminLogin();
-                        navigate('home');
-                        return;
-                    }
-                    appContainer.innerHTML += await AdminPage();
-                    break;
-                default:
-                    appContainer.innerHTML += `<div class="text-center py-20"><h2 class="text-2xl">404 - Page Not Found</h2></div>`;
+                if (['home', 'admin'].includes(path)) {
+                    fetchTournaments();
+                }
             }
             attachEventListeners();
-            if (['home', 'dashboard', 'admin'].includes(path)) {
-                fetchTournaments();
-            }
         }
 
         // --- COMPONENTS / PAGES ---
@@ -462,11 +469,7 @@
                 state.tournaments = [];
             } finally {
                 state.loading = false;
-                if(state.currentPage === 'dashboard') {
-                    render();
-                } else {
-                    updateTournamentLists();
-                }
+                updateTournamentLists();
             }
         }
         
@@ -497,7 +500,7 @@
             const dashboardList = document.getElementById('dashboard-tournament-list');
             if (!dashboardList) return;
 
-            if(state.loading) {
+            if(state.loading && state.currentPage === 'dashboard') {
                 dashboardList.innerHTML = '<p class="text-center col-span-full">Loading tournaments...</p>';
                 return;
             }
@@ -629,8 +632,9 @@
                     registered_users: arrayUnion(state.user.uid)
                 });
                 showMessage("Successfully registered!");
-                fetchTournaments();
+                await fetchTournaments();
                 hideTournamentDetails();
+                showTournamentDetails(tournamentId); // Refresh the details modal
             } catch (error) {
                 showMessage("Error registering for tournament: " + error.message);
             }
@@ -715,7 +719,8 @@
             let registeredPlayers = [];
             if (t.registered_users && t.registered_users.length > 0) {
                 const usersRef = collection(db, "users");
-                const q = query(usersRef, where(doc(usersRef).id, 'in', t.registered_users)); // This is a trick to query by ID
+                // Correctly query by document ID
+                const q = query(usersRef, where(documentId(), 'in', t.registered_users));
                 const userSnapshot = await getDocs(q);
                 registeredPlayers = userSnapshot.docs.map(doc => doc.data().displayName || 'Anonymous');
             }
@@ -762,22 +767,23 @@
                 return;
             }
             onAuthStateChanged(auth, async (user) => {
+                const wasLoggedIn = !!state.user;
                 if (user) {
                     state.user = user;
                     const userDocRef = doc(db, "users", user.uid);
                     const userDoc = await getDoc(userDocRef);
-                    if (userDoc.exists()) {
-                        state.userData = userDoc.data();
-                    }
-                    if (state.currentPage === 'signin' || state.currentPage === 'signup') {
-                        navigate('dashboard');
-                    } else {
-                        render();
-                    }
+                    state.userData = userDoc.exists() ? userDoc.data() : null;
                 } else {
                     state.user = null;
                     state.userData = null;
-                    if (state.currentPage === 'dashboard' || state.currentPage === 'admin') {
+                }
+                
+                const isLoggedIn = !!user;
+                // Only re-render or navigate if the auth state has actually changed.
+                if (wasLoggedIn !== isLoggedIn) {
+                    if (isLoggedIn && ['signin', 'signup', ''].includes(state.currentPage)) {
+                        navigate('dashboard');
+                    } else if (!isLoggedIn && (state.currentPage === 'dashboard' || state.currentPage === 'admin')) {
                         navigate('home');
                     } else {
                         render();
