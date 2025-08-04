@@ -572,12 +572,19 @@
 
             const userRef = doc(db, "users", state.user.uid);
             try {
-                await updateDoc(userRef, { displayName: newName });
+                // Use setDoc with merge: true. This will create the document if it doesn't exist,
+                // and update it if it does. This fixes the "No document to update" error for old user accounts.
+                await setDoc(userRef, { displayName: newName }, { merge: true });
+                
+                // Also update the local state to reflect the change immediately
+                if(!state.userData) state.userData = {};
                 state.userData.displayName = newName;
+
                 showMessage("Profile updated successfully!");
                 render(); // Re-render the dashboard
             } catch (error) {
                 showMessage("Error updating profile: " + error.message);
+                console.error("Error updating profile:", error);
             }
         }
 
