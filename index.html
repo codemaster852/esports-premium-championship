@@ -126,7 +126,6 @@
             db = getFirestore(app);
         } catch (error) {
             console.error("Error initializing Firebase:", error);
-            // We need to define showMessage before we can call it.
             // This error will be logged to the console.
         }
         
@@ -245,7 +244,7 @@
                 <footer class="bg-gray-900 py-6">
                     <div class="container mx-auto text-center text-gray-400">
                         <p>&copy; ${new Date().getFullYear()} Esports Premium Championship. All Rights Reserved.</p>
-                        <p class="text-sm mt-2">Built by Mostafa & Osama</p>
+                        <button id="adminPanelBtn" class="text-sm text-gray-500 hover:text-white mt-2 underline">Admin Panel</button>
                     </div>
                 </footer>
             `;
@@ -255,12 +254,15 @@
              const prize = t.prize_pool.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 });
              const isRegistered = state.user && t.registered_users && t.registered_users.includes(state.user.uid);
             return `
-                <div class="card rounded-lg overflow-hidden shadow-lg transform hover:-translate-y-2 transition-transform duration-300">
-                    <div class="p-6">
+                <div class="card rounded-lg overflow-hidden shadow-lg transform hover:-translate-y-2 transition-transform duration-300 flex flex-col">
+                    <div class="p-6 flex-grow">
                         <h3 class="text-xl font-bold text-white mb-2">${t.title}</h3>
                         <p class="text-blue-400 font-semibold mb-3">${t.game}</p>
                         <p class="text-gray-300 mb-1"><span class="font-semibold">Date:</span> ${new Date(t.date).toLocaleDateString()}</p>
                         <p class="text-green-400 font-bold text-lg mb-4">Prize Pool: ${prize}</p>
+                        <p class="text-gray-400 text-sm"><span class="font-semibold">Players Registered:</span> ${t.registered_users?.length || 0}</p>
+                    </div>
+                    <div class="p-6 pt-0">
                         ${state.user ? `
                             <button class="w-full py-2 px-4 rounded-lg font-semibold text-white ${isRegistered ? 'bg-green-600 cursor-not-allowed' : 'btn-primary register-btn'}" data-tournament-id="${t.id}" ${isRegistered ? 'disabled' : ''}>
                                 ${isRegistered ? 'Registered' : 'Register Now'}
@@ -324,18 +326,24 @@
         }
 
         async function DashboardPage() {
-            const registeredTournaments = state.tournaments.filter(t => t.registered_users && t.registered_users.includes(state.user.uid));
+            const games = [...new Set(state.tournaments.map(t => t.game))];
             return `
                 <div class="container mx-auto px-6 py-12">
-                    <h1 class="text-3xl font-bold mb-2">Dashboard</h1>
-                    <p class="text-gray-400 mb-8">Welcome back, ${state.user.email}</p>
+                    <h1 class="text-3xl font-bold mb-2">Tournament Dashboard</h1>
+                    <p class="text-gray-400 mb-8">Welcome back, ${state.user.email}. Browse and register for tournaments below.</p>
                     
-                    <h2 class="text-2xl font-bold mb-4">Your Registered Tournaments</h2>
-                    <div id="registered-tournament-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                        ${registeredTournaments.length > 0 
-                            ? registeredTournaments.map(TournamentCard).join('') 
-                            : '<p class="text-gray-400 col-span-full">You are not registered for any tournaments. <a href="#home" class="text-blue-400 hover:underline">Browse tournaments</a>.</p>'
-                        }
+                    <!-- Search and Filter Controls -->
+                    <div class="flex flex-col md:flex-row gap-4 mb-8">
+                        <input type="text" id="searchInput" placeholder="Search by tournament name..." class="w-full md:flex-grow bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
+                        <select id="gameFilter" class="w-full md:w-auto bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">All Games</option>
+                            ${games.map(game => `<option value="${game}">${game}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <h2 class="text-2xl font-bold mb-4">All Tournaments</h2>
+                    <div id="dashboard-tournament-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        <!-- Tournaments will be dynamically rendered here -->
                     </div>
                 </div>
             `;
@@ -399,9 +407,13 @@
 
         // --- EVENT LISTENERS ---
         function attachEventListeners() {
+            // Auth
             document.getElementById('signupForm')?.addEventListener('submit', handleSignUp);
             document.getElementById('signinForm')?.addEventListener('submit', handleSignIn);
             document.getElementById('logoutBtn')?.addEventListener('click', handleSignOut);
+            
+            // Admin
+            document.getElementById('adminPanelBtn')?.addEventListener('click', showAdminLogin);
             document.addEventListener('keydown', (e) => {
                 if(e.ctrlKey && (e.key === 'a' || e.key === 'A')) {
                     e.preventDefault();
@@ -412,16 +424,20 @@
             document.getElementById('adminLoginForm')?.addEventListener('submit', handleAdminLogin);
             document.getElementById('adminLogoutBtn')?.addEventListener('click', handleAdminLogout);
             document.getElementById('addTournamentForm')?.addEventListener('submit', handleAddTournament);
+            
+            // Tournament Interaction
             document.querySelectorAll('.delete-tournament-btn').forEach(btn => btn.addEventListener('click', handleDeleteTournament));
             document.querySelectorAll('.register-btn').forEach(btn => btn.addEventListener('click', handleRegisterForTournament));
+
+            // Dashboard Filtering
+            document.getElementById('searchInput')?.addEventListener('input', updateDashboardView);
+            document.getElementById('gameFilter')?.addEventListener('change', updateDashboardView);
         }
         
         // --- DATA FETCHING & MANIPULATION ---
         async function fetchTournaments() {
             state.loading = true;
-            if (document.getElementById('tournament-list')) {
-                document.getElementById('tournament-list').innerHTML = '<p class="text-center col-span-full">Loading tournaments...</p>';
-            }
+            updateTournamentLists(); // Show loading state
 
             try {
                 if (!db) {
@@ -440,18 +456,29 @@
                 state.tournaments = [];
             } finally {
                 state.loading = false;
-                updateTournamentLists();
+                if(state.currentPage === 'dashboard') {
+                    // Re-render dashboard to populate filter dropdown
+                    render();
+                } else {
+                    updateTournamentLists();
+                }
             }
         }
         
         function updateTournamentLists() {
+            // Home page list
             const tournamentList = document.getElementById('tournament-list');
             if (tournamentList) {
+                if(state.loading) {
+                    tournamentList.innerHTML = '<p class="text-center col-span-full">Loading tournaments...</p>';
+                    return;
+                }
                 tournamentList.innerHTML = state.tournaments.length > 0
                     ? state.tournaments.map(TournamentCard).join('')
                     : `<p class="text-center col-span-full">${state.error || 'No upcoming tournaments.'}</p>`;
             }
             
+            // Admin page list
             const adminTournamentList = document.getElementById('admin-tournament-list');
             if (adminTournamentList) {
                 adminTournamentList.innerHTML = state.tournaments.length > 0
@@ -459,13 +486,34 @@
                     : `<p class="text-center">${state.error || 'No tournaments found.'}</p>`;
             }
 
-            const registeredTournamentList = document.getElementById('registered-tournament-list');
-            if(registeredTournamentList && state.user) {
-                 const registeredTournaments = state.tournaments.filter(t => t.registered_users && t.registered_users.includes(state.user.uid));
-                 registeredTournamentList.innerHTML = registeredTournaments.length > 0
-                    ? registeredTournaments.map(TournamentCard).join('')
-                    : '<p class="text-gray-400 col-span-full">You are not registered for any tournaments. <a href="#home" class="text-blue-400 hover:underline">Browse tournaments</a>.</p>';
+            // Dashboard page list
+            updateDashboardView();
+            attachEventListeners();
+        }
+
+        function updateDashboardView() {
+            const dashboardList = document.getElementById('dashboard-tournament-list');
+            if (!dashboardList) return;
+
+            if(state.loading) {
+                dashboardList.innerHTML = '<p class="text-center col-span-full">Loading tournaments...</p>';
+                return;
             }
+
+            const searchTerm = document.getElementById('searchInput')?.value.toLowerCase() || '';
+            const selectedGame = document.getElementById('gameFilter')?.value || '';
+
+            const filteredTournaments = state.tournaments.filter(t => {
+                const matchesSearch = t.title.toLowerCase().includes(searchTerm);
+                const matchesGame = selectedGame ? t.game === selectedGame : true;
+                return matchesSearch && matchesGame;
+            });
+
+            dashboardList.innerHTML = filteredTournaments.length > 0
+                ? filteredTournaments.map(TournamentCard).join('')
+                : `<p class="text-gray-400 col-span-full">No tournaments match your criteria.</p>`;
+            
+            // Re-attach listeners for newly rendered register buttons
             attachEventListeners();
         }
 
