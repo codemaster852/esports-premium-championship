@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Esports Premium Championship (EPC)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;900&display=swap" rel="stylesheet">
+    
+    <!-- Firebase SDK -->
+    <script type="module">
+      // This is a placeholder for module loading. The actual imports are in the main script.
+    </script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Dark Gray */
+            color: #F9FAFB; /* Light Gray */
+        }
+        .hero-section {
+            background: linear-gradient(rgba(17, 24, 39, 0.8), rgba(17, 24, 39, 0.8)), url('https://placehold.co/1920x1080/000000/FFFFFF?text=EPC+Arena') no-repeat center center/cover;
+        }
+        .btn-primary {
+            background-color: #3B82F6;
+            transition: background-color 0.3s ease;
+        }
+        .btn-primary:hover {
+            background-color: #2563EB;
+        }
+        .card {
+            background-color: #1F2937; /* Darker Gray */
+            border: 1px solid #374151; /* Gray border */
+        }
+        .modal-backdrop {
+            background-color: rgba(0, 0, 0, 0.7);
+        }
+    </style>
+</head>
+<body class="antialiased">
+
+    <!-- App Container -->
+    <div id="app" class="min-h-screen">
+        <!-- Will be dynamically rendered by JavaScript -->
+    </div>
+
+    <!-- Admin Login Modal -->
+    <div id="adminLoginModal" class="fixed inset-0 z-50 items-center justify-center hidden overflow-y-auto modal-backdrop">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-8 w-full max-w-md mx-auto relative">
+            <button id="closeAdminModal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <h2 class="text-2xl font-bold text-white mb-6 text-center">Admin Login</h2>
+            <form id="adminLoginForm">
+                <div class="mb-4">
+                    <label for="username" class="block text-sm font-medium text-gray-300 mb-2">Username</label>
+                    <input type="text" id="username" name="username" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500" required>
+                </div>
+                <div class="mb-6">
+                    <label for="password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                    <input type="password" id="password" name="password" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2 focus:ring-blue-500 focus:border-blue-500" required>
+                </div>
+                 <p id="loginError" class="text-red-500 text-sm mb-4 text-center hidden"></p>
+                <button type="submit" class="w-full btn-primary text-white font-bold py-2 px-4 rounded-lg">Login</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Generic Message Modal -->
+    <div id="messageModal" class="fixed inset-0 z-50 items-center justify-center hidden overflow-y-auto modal-backdrop">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-8 w-full max-w-md mx-auto text-center">
+            <p id="modalMessage" class="text-white text-lg mb-6"></p>
+            <button id="closeMessageModal" class="btn-primary text-white font-bold py-2 px-6 rounded-lg">OK</button>
+        </div>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirmModal" class="fixed inset-0 z-50 items-center justify-center hidden overflow-y-auto modal-backdrop">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-8 w-full max-w-md mx-auto text-center">
+            <p id="confirmMessage" class="text-white text-lg mb-6"></p>
+            <div class="flex justify-center space-x-4">
+                <button id="confirmBtn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-6 rounded-lg">Confirm</button>
+                <button id="cancelBtn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-2 px-6 rounded-lg">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // --- FIREBASE SETUP ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import { 
+            getAuth, 
+            createUserWithEmailAndPassword, 
+            signInWithEmailAndPassword, 
+            signOut, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import { 
+            getFirestore, 
+            collection, 
+            getDocs, 
+            addDoc, 
+            deleteDoc, 
+            doc, 
+            updateDoc,
+            arrayUnion,
+            query,
+            orderBy
+        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        // Your web app's Firebase configuration from your project
+        const firebaseConfig = {
+            apiKey: "AIzaSyBQRLjw6uU_99iBLNaONpg-EVOBCBN_EYw",
+            authDomain: "esports-premium-championship.firebaseapp.com",
+            projectId: "esports-premium-championship",
+            storageBucket: "esports-premium-championship.appspot.com", // Corrected domain
+            messagingSenderId: "17019074381",
+            appId: "1:17019074381:web:171b299dab8cbda25d2904",
+            measurementId: "G-11YZM952SK"
+        };
+
+        let app, auth, db;
+
+        try {
+            app = initializeApp(firebaseConfig);
+            auth = getAuth(app);
+            db = getFirestore(app);
+        } catch (error) {
+            console.error("Error initializing Firebase:", error);
+            // We need to define showMessage before we can call it.
+            // This error will be logged to the console.
+        }
+        
+        // --- MOCK DATA (if Firebase is not configured) ---
+        const mockTournaments = [
+            { id: 'mock1', game: 'Valorant', title: 'EPC Valorant Masters', date: '2025-09-15', prize_pool: 50000, registered_users: [] },
+            { id: 'mock2', game: 'League of Legends', title: 'EPC Summoner\'s Rift', date: '2025-10-01', prize_pool: 100000, registered_users: [] },
+            { id: 'mock3', game: 'Counter-Strike 2', title: 'EPC Global Offensive', date: '2025-10-20', prize_pool: 75000, registered_users: [] },
+        ];
+
+        // --- STATE MANAGEMENT ---
+        const state = {
+            currentPage: 'home', // home, signup, signin, dashboard, admin
+            user: null, // Will hold Firebase user object
+            tournaments: [],
+            error: null,
+            loading: true,
+        };
+
+        // --- ROUTER & RENDER ---
+        const appContainer = document.getElementById('app');
+
+        function navigate(page) {
+            window.location.hash = page;
+        }
+        
+        window.addEventListener('hashchange', render);
+        window.addEventListener('load', render);
+
+        async function render() {
+            const path = window.location.hash.replace('#', '') || 'home';
+            state.currentPage = path;
+            appContainer.innerHTML = ''; // Clear previous content
+
+            // Header is on most pages
+            if (path !== 'admin') {
+                 appContainer.innerHTML += Header();
+            }
+
+            switch (path) {
+                case 'home':
+                    appContainer.innerHTML += await HomePage();
+                    break;
+                case 'signup':
+                    appContainer.innerHTML += SignUpPage();
+                    break;
+                case 'signin':
+                    appContainer.innerHTML += SignInPage();
+                    break;
+                case 'dashboard':
+                    if (!state.user) {
+                        navigate('signin');
+                        return;
+                    }
+                    appContainer.innerHTML += await DashboardPage();
+                    break;
+                case 'admin':
+                     if (!isAdmin()) {
+                        showAdminLogin();
+                        navigate('home');
+                        return;
+                    }
+                    appContainer.innerHTML += await AdminPage();
+                    break;
+                default:
+                    appContainer.innerHTML += `<div class="text-center py-20"><h2 class="text-2xl">404 - Page Not Found</h2></div>`;
+            }
+            attachEventListeners();
+            // Fetch tournaments only on relevant pages
+            if (['home', 'dashboard', 'admin'].includes(path)) {
+                fetchTournaments();
+            }
+        }
+
+        // --- COMPONENTS / PAGES ---
+
+        function Header() {
+            return `
+                <header class="bg-gray-900/80 backdrop-blur-sm sticky top-0 z-40">
+                    <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+                        <a href="#home" class="text-2xl font-bold text-white">EPC</a>
+                        <div class="flex items-center space-x-4">
+                            <a href="#home" class="text-gray-300 hover:text-white">Home</a>
+                            ${state.user ? `
+                                <a href="#dashboard" class="text-gray-300 hover:text-white">Dashboard</a>
+                                <button id="logoutBtn" class="btn-primary text-white font-semibold py-2 px-4 rounded-lg text-sm">Logout</button>
+                            ` : `
+                                <a href="#signin" class="text-gray-300 hover:text-white">Sign In</a>
+                                <a href="#signup" class="btn-primary text-white font-semibold py-2 px-4 rounded-lg text-sm">Sign Up</a>
+                            `}
+                        </div>
+                    </nav>
+                </header>
+            `;
+        }
+
+        async function HomePage() {
+            return `
+                <main>
+                    <section class="hero-section text-white py-20 md:py-32">
+                        <div class="container mx-auto text-center px-6">
+                            <h1 class="text-4xl md:text-6xl font-black uppercase tracking-wider mb-4">Esports Premium Championship</h1>
+                            <p class="text-lg md:text-xl text-gray-300 mb-8">The Ultimate Proving Ground for Aspiring Champions.</p>
+                            <a href="#signup" class="btn-primary text-white font-bold py-3 px-8 rounded-lg text-lg">Join the Competition</a>
+                        </div>
+                    </section>
+                    <section id="tournaments" class="py-20">
+                        <div class="container mx-auto px-6">
+                            <h2 class="text-3xl font-bold text-center mb-12">Upcoming Tournaments</h2>
+                            <div id="tournament-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                                ${state.loading ? '<p class="text-center col-span-full">Loading tournaments...</p>' : ''}
+                            </div>
+                        </div>
+                    </section>
+                </main>
+                <footer class="bg-gray-900 py-6">
+                    <div class="container mx-auto text-center text-gray-400">
+                        <p>&copy; ${new Date().getFullYear()} Esports Premium Championship. All Rights Reserved.</p>
+                        <p class="text-sm mt-2">Built by Mostafa & Osama</p>
+                    </div>
+                </footer>
+            `;
+        }
+        
+        function TournamentCard(t) {
+             const prize = t.prize_pool.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 });
+             const isRegistered = state.user && t.registered_users && t.registered_users.includes(state.user.uid);
+            return `
+                <div class="card rounded-lg overflow-hidden shadow-lg transform hover:-translate-y-2 transition-transform duration-300">
+                    <div class="p-6">
+                        <h3 class="text-xl font-bold text-white mb-2">${t.title}</h3>
+                        <p class="text-blue-400 font-semibold mb-3">${t.game}</p>
+                        <p class="text-gray-300 mb-1"><span class="font-semibold">Date:</span> ${new Date(t.date).toLocaleDateString()}</p>
+                        <p class="text-green-400 font-bold text-lg mb-4">Prize Pool: ${prize}</p>
+                        ${state.user ? `
+                            <button class="w-full py-2 px-4 rounded-lg font-semibold text-white ${isRegistered ? 'bg-green-600 cursor-not-allowed' : 'btn-primary register-btn'}" data-tournament-id="${t.id}" ${isRegistered ? 'disabled' : ''}>
+                                ${isRegistered ? 'Registered' : 'Register Now'}
+                            </button>
+                        ` : `
+                            <a href="#signin" class="block text-center w-full py-2 px-4 rounded-lg font-semibold text-white btn-primary">Sign In to Register</a>
+                        `}
+                    </div>
+                </div>
+            `;
+        }
+
+        function SignUpPage() {
+            return `
+                <div class="flex items-center justify-center py-20">
+                    <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md">
+                        <h2 class="text-3xl font-bold text-center text-white mb-6">Create Account</h2>
+                        <form id="signupForm">
+                            <div class="mb-4">
+                                <label for="signup-email" class="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                                <input type="email" id="signup-email" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2" required>
+                            </div>
+                            <div class="mb-6">
+                                <label for="signup-password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                                <input type="password" id="signup-password" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2" required minlength="6">
+                            </div>
+                            <p id="authError" class="text-red-500 text-sm mb-4 text-center hidden"></p>
+                            <button type="submit" class="w-full btn-primary text-white font-bold py-2 px-4 rounded-lg">Sign Up</button>
+                        </form>
+                        <p class="text-center text-gray-400 mt-4">
+                            Already have an account? <a href="#signin" class="text-blue-400 hover:underline">Sign In</a>
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function SignInPage() {
+            return `
+                 <div class="flex items-center justify-center py-20">
+                    <div class="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md">
+                        <h2 class="text-3xl font-bold text-center text-white mb-6">Welcome Back</h2>
+                        <form id="signinForm">
+                            <div class="mb-4">
+                                <label for="signin-email" class="block text-sm font-medium text-gray-300 mb-2">Email</label>
+                                <input type="email" id="signin-email" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2" required>
+                            </div>
+                            <div class="mb-6">
+                                <label for="signin-password" class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                                <input type="password" id="signin-password" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2" required>
+                            </div>
+                             <p id="authError" class="text-red-500 text-sm mb-4 text-center hidden"></p>
+                            <button type="submit" class="w-full btn-primary text-white font-bold py-2 px-4 rounded-lg">Sign In</button>
+                        </form>
+                         <p class="text-center text-gray-400 mt-4">
+                            Don't have an account? <a href="#signup" class="text-blue-400 hover:underline">Sign Up</a>
+                        </p>
+                    </div>
+                </div>
+            `;
+        }
+
+        async function DashboardPage() {
+            const registeredTournaments = state.tournaments.filter(t => t.registered_users && t.registered_users.includes(state.user.uid));
+            return `
+                <div class="container mx-auto px-6 py-12">
+                    <h1 class="text-3xl font-bold mb-2">Dashboard</h1>
+                    <p class="text-gray-400 mb-8">Welcome back, ${state.user.email}</p>
+                    
+                    <h2 class="text-2xl font-bold mb-4">Your Registered Tournaments</h2>
+                    <div id="registered-tournament-list" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                        ${registeredTournaments.length > 0 
+                            ? registeredTournaments.map(TournamentCard).join('') 
+                            : '<p class="text-gray-400 col-span-full">You are not registered for any tournaments. <a href="#home" class="text-blue-400 hover:underline">Browse tournaments</a>.</p>'
+                        }
+                    </div>
+                </div>
+            `;
+        }
+        
+        async function AdminPage() {
+             return `
+                <div class="bg-gray-900 min-h-screen">
+                    <header class="bg-gray-800 shadow-md">
+                        <div class="container mx-auto px-6 py-4 flex justify-between items-center">
+                            <h1 class="text-xl font-bold text-white">EPC Admin Panel</h1>
+                            <button id="adminLogoutBtn" class="bg-red-600 hover:bg-red-700 text-white font-semibold py-2 px-4 rounded-lg text-sm">Logout</button>
+                        </div>
+                    </header>
+                    <main class="container mx-auto px-6 py-8">
+                        <div class="bg-gray-800 rounded-lg shadow-xl p-8 mb-12">
+                            <h2 class="text-2xl font-bold text-white mb-6">Add New Tournament</h2>
+                            <form id="addTournamentForm">
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <div>
+                                        <label for="game" class="block text-sm font-medium text-gray-300 mb-2">Game Title</label>
+                                        <input type="text" id="game" name="game" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2" required>
+                                    </div>
+                                    <div>
+                                        <label for="title" class="block text-sm font-medium text-gray-300 mb-2">Tournament Name</label>
+                                        <input type="text" id="title" name="title" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2" required>
+                                    </div>
+                                    <div>
+                                        <label for="date" class="block text-sm font-medium text-gray-300 mb-2">Date</label>
+                                        <input type="date" id="date" name="date" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2" required>
+                                    </div>
+                                    <div>
+                                        <label for="prize_pool" class="block text-sm font-medium text-gray-300 mb-2">Prize Pool ($)</label>
+                                        <input type="number" id="prize_pool" name="prize_pool" class="w-full bg-gray-700 border border-gray-600 text-white rounded-lg px-3 py-2" required>
+                                    </div>
+                                </div>
+                                <button type="submit" class="mt-6 w-full md:w-auto btn-primary text-white font-bold py-2 px-6 rounded-lg">Add Tournament</button>
+                            </form>
+                        </div>
+                        <div>
+                            <h2 class="text-2xl font-bold text-white mb-6">Manage Tournaments</h2>
+                            <div id="admin-tournament-list" class="space-y-4"></div>
+                        </div>
+                    </main>
+                </div>
+            `;
+        }
+
+        function AdminTournamentItem(t) {
+            const prize = t.prize_pool.toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 });
+            return `
+                <div class="bg-gray-800 p-4 rounded-lg flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                        <p class="font-bold text-white">${t.title} <span class="font-normal text-blue-400">(${t.game})</span></p>
+                        <p class="text-sm text-gray-400">Date: ${new Date(t.date).toLocaleDateString()} | Prize: ${prize}</p>
+                    </div>
+                    <button data-tournament-id="${t.id}" class="delete-tournament-btn bg-red-600 hover:bg-red-700 text-white font-semibold py-1 px-3 rounded-lg text-sm">Delete</button>
+                </div>
+            `;
+        }
+
+        // --- EVENT LISTENERS ---
+        function attachEventListeners() {
+            document.getElementById('signupForm')?.addEventListener('submit', handleSignUp);
+            document.getElementById('signinForm')?.addEventListener('submit', handleSignIn);
+            document.getElementById('logoutBtn')?.addEventListener('click', handleSignOut);
+            document.addEventListener('keydown', (e) => {
+                if(e.ctrlKey && (e.key === 'a' || e.key === 'A')) {
+                    e.preventDefault();
+                    showAdminLogin();
+                }
+            });
+            document.getElementById('closeAdminModal')?.addEventListener('click', hideAdminLogin);
+            document.getElementById('adminLoginForm')?.addEventListener('submit', handleAdminLogin);
+            document.getElementById('adminLogoutBtn')?.addEventListener('click', handleAdminLogout);
+            document.getElementById('addTournamentForm')?.addEventListener('submit', handleAddTournament);
+            document.querySelectorAll('.delete-tournament-btn').forEach(btn => btn.addEventListener('click', handleDeleteTournament));
+            document.querySelectorAll('.register-btn').forEach(btn => btn.addEventListener('click', handleRegisterForTournament));
+        }
+        
+        // --- DATA FETCHING & MANIPULATION ---
+        async function fetchTournaments() {
+            state.loading = true;
+            if (document.getElementById('tournament-list')) {
+                document.getElementById('tournament-list').innerHTML = '<p class="text-center col-span-full">Loading tournaments...</p>';
+            }
+
+            try {
+                if (!db) {
+                    console.log("Firebase not configured. Using mock data.");
+                    state.tournaments = mockTournaments;
+                } else {
+                    const tournamentsCol = collection(db, "tournaments");
+                    const q = query(tournamentsCol, orderBy("date", "asc"));
+                    const tournamentSnapshot = await getDocs(q);
+                    state.tournaments = tournamentSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                }
+                state.error = null;
+            } catch (error) {
+                console.error('Error fetching tournaments:', error);
+                state.error = "Could not fetch tournaments.";
+                state.tournaments = [];
+            } finally {
+                state.loading = false;
+                updateTournamentLists();
+            }
+        }
+        
+        function updateTournamentLists() {
+            const tournamentList = document.getElementById('tournament-list');
+            if (tournamentList) {
+                tournamentList.innerHTML = state.tournaments.length > 0
+                    ? state.tournaments.map(TournamentCard).join('')
+                    : `<p class="text-center col-span-full">${state.error || 'No upcoming tournaments.'}</p>`;
+            }
+            
+            const adminTournamentList = document.getElementById('admin-tournament-list');
+            if (adminTournamentList) {
+                adminTournamentList.innerHTML = state.tournaments.length > 0
+                    ? state.tournaments.map(AdminTournamentItem).join('')
+                    : `<p class="text-center">${state.error || 'No tournaments found.'}</p>`;
+            }
+
+            const registeredTournamentList = document.getElementById('registered-tournament-list');
+            if(registeredTournamentList && state.user) {
+                 const registeredTournaments = state.tournaments.filter(t => t.registered_users && t.registered_users.includes(state.user.uid));
+                 registeredTournamentList.innerHTML = registeredTournaments.length > 0
+                    ? registeredTournaments.map(TournamentCard).join('')
+                    : '<p class="text-gray-400 col-span-full">You are not registered for any tournaments. <a href="#home" class="text-blue-400 hover:underline">Browse tournaments</a>.</p>';
+            }
+            attachEventListeners();
+        }
+
+        // --- HANDLERS ---
+        async function handleSignUp(e) {
+            e.preventDefault();
+            if (!auth) return showMessage("Firebase not configured. Check console for details.");
+            const email = document.getElementById('signup-email').value;
+            const password = document.getElementById('signup-password').value;
+            try {
+                await createUserWithEmailAndPassword(auth, email, password);
+                showMessage('Sign up successful! You can now sign in.');
+                navigate('signin');
+            } catch (error) {
+                document.getElementById('authError').textContent = error.message;
+                document.getElementById('authError').classList.remove('hidden');
+            }
+        }
+
+        async function handleSignIn(e) {
+            e.preventDefault();
+            if (!auth) return showMessage("Firebase not configured. Check console for details.");
+            const email = document.getElementById('signin-email').value;
+            const password = document.getElementById('signin-password').value;
+            try {
+                await signInWithEmailAndPassword(auth, email, password);
+                // The onAuthStateChanged listener will handle navigation
+            } catch (error) {
+                document.getElementById('authError').textContent = error.message;
+                document.getElementById('authError').classList.remove('hidden');
+            }
+        }
+
+        async function handleSignOut() {
+            if (auth) await signOut(auth);
+            sessionStorage.removeItem('is_admin');
+            // The onAuthStateChanged listener will handle state update and navigation
+        }
+
+        async function handleAddTournament(e) {
+            e.preventDefault();
+            if (!db) return showMessage("Firebase not configured. Check console for details.");
+            const form = e.target;
+            const newTournament = {
+                game: form.game.value,
+                title: form.title.value,
+                date: form.date.value,
+                prize_pool: parseInt(form.prize_pool.value, 10),
+                registered_users: []
+            };
+            try {
+                await addDoc(collection(db, "tournaments"), newTournament);
+                form.reset();
+                fetchTournaments();
+            } catch (error) {
+                showMessage('Error adding tournament: ' + error.message);
+            }
+        }
+
+        async function handleDeleteTournament(e) {
+            const tournamentId = e.target.dataset.tournamentId;
+            showConfirmation('Are you sure you want to delete this tournament?', async () => {
+                if (!db) return showMessage("Firebase not configured. Check console for details.");
+                try {
+                    await deleteDoc(doc(db, "tournaments", tournamentId));
+                    fetchTournaments();
+                } catch (error) {
+                    showMessage('Error deleting tournament: ' + error.message);
+                }
+            });
+        }
+        
+        async function handleRegisterForTournament(e) {
+            if (!state.user) return showMessage("You must be signed in to register.");
+            if (!db) return showMessage("Firebase not configured. Check console for details.");
+
+            const tournamentId = e.target.dataset.tournamentId;
+            const tournamentRef = doc(db, "tournaments", tournamentId);
+            
+            try {
+                await updateDoc(tournamentRef, {
+                    registered_users: arrayUnion(state.user.uid)
+                });
+                showMessage("Successfully registered!");
+                fetchTournaments();
+            } catch (error) {
+                showMessage("Error registering for tournament: " + error.message);
+            }
+        }
+
+        // --- ADMIN AUTH ---
+        function showAdminLogin() {
+            const modal = document.getElementById('adminLoginModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+        function hideAdminLogin() {
+            const modal = document.getElementById('adminLoginModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.getElementById('loginError').classList.add('hidden');
+        }
+        function handleAdminLogin(e) {
+            e.preventDefault();
+            const user = document.getElementById('username').value;
+            const pass = document.getElementById('password').value;
+            if (user === 'Mostafa' && pass === '123456789') {
+                sessionStorage.setItem('is_admin', 'true');
+                hideAdminLogin();
+                navigate('admin');
+            } else {
+                document.getElementById('loginError').textContent = 'Invalid username or password.';
+                document.getElementById('loginError').classList.remove('hidden');
+            }
+        }
+        function handleAdminLogout() {
+            sessionStorage.removeItem('is_admin');
+            navigate('home');
+        }
+        function isAdmin() {
+            return sessionStorage.getItem('is_admin') === 'true';
+        }
+        
+        // --- MODAL HELPERS ---
+        const messageModal = document.getElementById('messageModal');
+        const modalMessage = document.getElementById('modalMessage');
+        const closeMessageModalBtn = document.getElementById('closeMessageModal');
+        const confirmModal = document.getElementById('confirmModal');
+        const confirmMessage = document.getElementById('confirmMessage');
+        const confirmBtn = document.getElementById('confirmBtn');
+        const cancelBtn = document.getElementById('cancelBtn');
+
+        function showMessage(message) {
+            modalMessage.textContent = message;
+            messageModal.classList.remove('hidden');
+            messageModal.classList.add('flex');
+        }
+        closeMessageModalBtn.addEventListener('click', () => {
+            messageModal.classList.add('hidden');
+            messageModal.classList.remove('flex');
+        });
+
+        function showConfirmation(message, onConfirm) {
+            confirmMessage.textContent = message;
+            confirmModal.classList.remove('hidden');
+            confirmModal.classList.add('flex');
+            const newConfirmBtn = confirmBtn.cloneNode(true); // To remove old listeners
+            confirmBtn.parentNode.replaceChild(newConfirmBtn, confirmBtn);
+            newConfirmBtn.addEventListener('click', () => {
+                onConfirm();
+                hideConfirmation();
+            });
+        }
+        cancelBtn.addEventListener('click', hideConfirmation);
+        function hideConfirmation() {
+            confirmModal.classList.add('hidden');
+            confirmModal.classList.remove('flex');
+        }
+
+        // --- INITIALIZATION ---
+        function initialize() {
+            if (!auth) {
+                showMessage("Firebase could not be initialized. Please check the `firebaseConfig` object and your internet connection.");
+                render(); // Render with no user
+                return;
+            }
+            onAuthStateChanged(auth, (user) => {
+                const wasLoggedIn = !!state.user;
+                state.user = user;
+                const isLoggedIn = !!user;
+
+                if (wasLoggedIn !== isLoggedIn) {
+                    if (isLoggedIn && ['signin', 'signup'].includes(state.currentPage)) {
+                        navigate('dashboard');
+                    } else if (!isLoggedIn && (state.currentPage === 'dashboard' || state.currentPage === 'admin')) {
+                        navigate('home');
+                    } else {
+                        render();
+                    }
+                }
+            });
+        }
+        
+        initialize();
+
+    </script>
+</body>
+</html>
